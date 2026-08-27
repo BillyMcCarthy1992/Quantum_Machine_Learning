@@ -1,0 +1,36 @@
+# Simulation data — regenerates deterministically from the seed (see README)
+results/data/*.npz
+results/data/*.npz.parts/
+
+# Archives / stray artifacts
+*.zip
+zi4bWzHL
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.synctex.gz
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.toc
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+results/data/results_summary.txt

@@ -1,0 +1,290 @@
+% Final report -- IEEE conference format.
+% Compiles with IEEEtran.cls when available (Overleaf: choose the official
+% IEEE conference template and paste the body in); falls back to a
+% two-column approximation for length checking otherwise.
+\IfFileExists{IEEEtran.cls}{%
+\documentclass[conference]{IEEEtran}%
+}{%
+\documentclass[10pt,twocolumn]{article}%
+\usepackage[margin=0.72in,top=0.8in,bottom=0.9in]{geometry}%
+\setlength{\columnsep}{0.2in}%
+}
+\providecommand{\IEEEauthorblockN}[1]{{\large #1} --- }
+\providecommand{\IEEEauthorblockA}[1]{#1\par}
+\usepackage{lmodern}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\maybefig}[2]{\IfFileExists{#1}{\includegraphics[width=#2]{#1}}{\fbox{\parbox[c][4.0cm][c]{0.9\linewidth}{\centering MISSING FIGURE\par \texttt{\detokenize{#1}}\par place beside .tex and recompile\par}}}}
+\newcommand{\gap}{\ensuremath{E-E_{\min}}}
+
+\title{Convergence Funnels and Fertile Valleys:\\ A Controlled Study of Trainability in Identity-Block-Initialized Quantum Neural Networks}
+\author{\IEEEauthorblockN{Billy McCarthy}\IEEEauthorblockA{Machine Learning --- Final Report, July 2026}}
+
+\date{}
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Identity-block initialization prevents barren plateaus, the quantum-neural-network form of the vanishing-gradient problem, at the moment training starts. Whether that protection survives training has never been tested with proper controls. We study this on automatically generated, fully seeded datasets of simulated QNN training runs at up to twelve qubits, holding roughly $10^7$ gradient records per configuration. Measured against a matched-displacement null and with converged runs conditioned out, we find no plateau reemergence. Gradient variance is instead tied to the remaining loss gap by a power law that does not depend on the optimizer, which we call a convergence funnel. The funnel is steeper than a quadratic basin would predict, and grows steeper with system size. Its coefficient at matched relative progress falls by about $0.48$ per qubit up to ten qubits, which is the canonical barren-plateau factor, though a pre-registered prediction at twelve qubits fails and exposes a finite-depth confound in fixed-depth comparisons. The fertile region around the initialization also contracts measurably as systems grow. Under a global cost the relationship between trajectory and landscape inverts, with optimizers carving fertile valleys some thirty-six times above an otherwise barren landscape. These results reconcile the optimism of the initialization literature with exponential-cost scaling.
+\end{abstract}
+
+\section{Introduction}
+Deep networks stop training when gradient signal disappears, and the classical fixes start at initialization. Glorot and Bengio \cite{glorot} showed how to preserve variance through the layers, Saxe \emph{et al.}~\cite{saxe} sharpened this into a spectral condition, and residual architectures work partly because their blocks begin close to the identity map \cite{resnet,hardtma}. Quantum neural networks, meaning parameterized quantum circuits trained by gradient descent on the expectation of an observable, suffer an extreme version of the same problem. McClean \emph{et al.}~\cite{mcclean} showed that once a circuit is deep enough to approximate a unitary 2-design, the variance of any cost gradient falls exponentially in the qubit count $n$. This is the barren plateau, and it remains the central obstruction to training these models \cite{larocca}. For a two-local Pauli observable the predicted factor is $2^{1-n}$, a halving for every qubit added. Because quantum losses are estimated from measurement samples rather than computed exactly, an exponentially small gradient is not merely slow to follow. It cannot be resolved at all within any polynomial shot budget.
+
+Grant \emph{et al.}~\cite{grant} proposed the quantum counterpart of identity-centred initialization. Their circuit is built from $M$ blocks, and each block pairs a depth-$L$ segment with a second segment initialized as its inverse, so the whole circuit evaluates to the identity before training begins. Differentiating any single parameter then leaves an effectively shallow circuit, and initial gradients stay large no matter how many qubits are involved. What happens once training starts is the open question. Grant \emph{et al.} watched ensemble gradient variance decay over training and argued that this reflects convergence rather than a reemerging plateau. They ran no control that could separate the two possibilities. Gradients vanish at minima and on plateaus alike, and no distance-matched or cost-matched comparison was reported. More recent warm-start theory has raised the stakes without settling the question. Gradients are provably substantial only inside a shrinking patch around the initialization \cite{puig,mhiri}, and whether real optimizer trajectories behave like the average of that patch, or instead follow rare high-gradient paths that Puig \emph{et al.} call fertile valleys, was left explicitly open. Cost-function locality adds a third dimension, since global observables plateau at any depth while local ones keep polynomial gradients in shallow circuits \cite{cerezo}.
+
+We ask three questions. \textbf{RQ1} asks whether the decay of gradient variance during identity-block training is governed by displacement from the initialization, by something specific to the trajectory the optimizer takes, or simply by convergence. \textbf{RQ2} asks whether cost-function locality changes that answer, and whether it acts on the landscape itself or on the paths the optimizer selects. \textbf{RQ3} asks how both answers scale with system size and circuit depth.
+
+Our contributions are as follows. We introduce a controlled measurement design that compares ensemble gradient variance along trajectories against random displacements of matched norm, with converged runs conditioned out, and apply it to the canonical identity-block construction. We find that no plateau reemergence occurs at practical sizes, because variance follows an optimizer-independent power law in the remaining loss gap. We show that this funnel is steeper than the harmonic baseline a quadratic basin would produce, increasingly so as systems grow. We give a scaling law for the funnel coefficient, test it by pre-registered prediction at twelve qubits, and trace the resulting failure to a finite-depth confound using two depth controls. We show that cost locality inverts the relationship between trajectory and landscape, and in doing so we report the first systematic measurement of a fertile valley. Finally we provide a fully seeded artefact whose every construction was cross-validated against an independent implementation. Section~II reviews the related work, Section~III describes the methodology and the datasets, Section~IV presents the evaluation and error analysis, and Section~V concludes.
+
+\section{Related Work}
+\subsection{Barren plateaus and their mitigation}
+McClean \emph{et al.}~\cite{mcclean} established the phenomenon both analytically and numerically. For our purposes its great strength is an exact variance formula under 2-design assumptions, which lets us use the result as a quantitative anchor rather than a qualitative reference. Its limitation is one of scope. The analysis describes the landscape on average at random initialization, and says nothing about special starting points or about what happens once training is underway. Later work widened the range of causes. Plateaus can be induced by the globality of the cost function \cite{cerezo}, by hardware noise \cite{wang}, and by expressibility itself \cite{holmes}, the last of these establishing an uncomfortable trade-off in which the expressiveness that makes an ansatz useful is also what flattens its landscape. Larocca \emph{et al.}~\cite{larocca} survey the resulting picture. Mitigation strategies fall into three groups. Architectural approaches use shallow or problem-inspired ansätze, procedural approaches such as layerwise training \cite{skolik} grow the circuit gradually and can stall once the effective depth increases, and initialization-based approaches include the construction studied here \cite{grant} along with Gaussian small-angle schemes \cite{zhang}. Almost all of this work evaluates its proposal at initialization. The during-training question we pose applies equally to every one of them, and identity-block initialization is simply the cleanest case to study because its starting point can be characterized exactly.
+
+A sharper line of criticism bears on how any positive result here should be read. Anschuetz and Kiani \cite{anschuetz} show that landscapes free of plateaus can still be dominated by poor local minima, and training variational models is NP-hard in general \cite{bittel}. The absence of a plateau is therefore necessary for practical trainability but a long way from sufficient, and we adopt that caveat explicitly when interpreting our own results.
+
+\subsection{Warm starts and patch guarantees}
+Grant \emph{et al.}~\cite{grant} contribute the construction we study together with empirical evidence that it trains. Their during-training claim, that the variance of the gradient became small only as the model energy converged, is exactly the gap this work addresses. The claim rests on an uncontrolled ensemble, and the paper's own appendix concedes that identity initialization does not by itself guarantee that any derivative is non-zero, so the protection is contingent rather than structural. Cerezo \emph{et al.}~\cite{cerezo} proved the locality dichotomy, but again as a statement about randomly sampled parameter points. Whether locality shapes trajectories had not been tested, and that is our RQ2.
+
+The closest work is the warm-start theory of Puig \emph{et al.}~\cite{puig} and Mhiri \emph{et al.}~\cite{mhiri}. Puig \emph{et al.} prove that for iterative variational simulation the loss variance is $\Omega(1/M)$ within a hypercube of half-width $r\in\Theta(1/\sqrt M)$ around the previous solution, and that a smaller region is approximately convex. These are strong guarantees, but they are tied to one algorithmic setting and, more importantly for us, to uniformly sampled points within the region. The same paper exhibits minima that jump beyond all guarantees, and one anecdotal fertile valley whose prevalence the authors describe as an open question. Mhiri \emph{et al.}~\cite{mhiri} unify the patch bounds by showing that wherever a point has non-exponentially-vanishing curvature, a patch of radius $\Theta(1/(\sqrt m\,\mathrm{poly}\,n))$ retains variance $\Omega(r^4)$, with the negative counterpart that constant-radius regions inherit the plateau. Two limitations of that programme matter here. The bounds concern random displacements rather than optimizer paths, which is the measurement we supply. And the same authors observe that small-angle regions around the identity tend to be low in entanglement or low in magic, and are therefore classically simulable by tensor-network or Clifford-perturbation methods. A warm start that never leaves such a region may be buying trainability at the cost of quantum advantage. We return to this in Section~V because it constrains how our own positive result should be understood.
+
+\subsection{Initialization in classical deep learning}
+The classical literature supplies the analogy and much of the vocabulary, but not the answer. Glorot and Bengio \cite{glorot} tie trainability to variance propagation at initialization, Saxe \emph{et al.}~\cite{saxe} sharpen this into dynamical isometry, which is again a condition imposed at initialization, and He \emph{et al.}~\cite{resnet} together with Hardt and Ma \cite{hardtma} show that architectures whose blocks begin near the identity remain trainable at depths where other networks fail. In every case the analysis is anchored at the starting point and the survival of the property under training is treated informally, which is precisely the situation in the quantum literature. What makes the quantum setting attractive is that flatness can be characterized analytically, so a controlled study is feasible. Section~V returns to the possibility of porting the same measurement design back to classical residual networks.
+
+\subsection{Datasets and their previous use}
+Our data are generated rather than collected. The underlying tasks, however, are reused deliberately from \cite{grant}, specifically their Fig.~1(a) initialization-variance experiment and their seven-qubit Heisenberg VQE. Reusing a published setting is what allows each instrument to be validated against a published curve and an exact theoretical value before any new measurement is trusted, and it makes our controlled results directly comparable to the uncontrolled originals. The gain we expected from this reuse, and which Section~III-F realizes, is an anchored instrument. The genuinely new datasets are the matched-norm null evaluations, the cross-measured costs and the block-deviation probes, none of which prior work recorded.
+
+\section{Methodology}
+\subsection{Setup and notation}
+A QNN computes $C(\theta)=\mathrm{Tr}\!\left[U(\theta)\rho\,U^\dagger(\theta)\,O\right]$ for an $n$-qubit input state $\rho$, a Hermitian observable $O$, and a circuit
+\begin{equation}
+U(\theta)=\prod_{l=P}^{1} V_l\,e^{-i\theta_l H_l/2},
+\label{eq:ansatz}
+\end{equation}
+in which the $V_l$ are fixed CZ-chain entanglers, the generators $H_l$ are drawn uniformly from $\{X,Y,Z\}$ per gate, and $P$ counts the trainable parameters. Gradients are obtained analytically. The parameter-shift rule \cite{mitarai,schuld} gives $\partial_l C=\tfrac12[C(\theta+\tfrac\pi2 e_l)-C(\theta-\tfrac\pi2 e_l)]$ exactly, and full gradient vectors come from adjoint differentiation for speed. What we study throughout is the across-trial variance
+\begin{equation}
+\mathcal{V}_p \;=\; \mathrm{Var}_{k\in[K]}\!\left[\partial_p C(\theta^{(k)})\right],
+\label{eq:var}
+\end{equation}
+where $k$ indexes independently seeded trials, each fixing the circuit axes, the entangler, the initial parameters and therefore the whole trajectory, and $p$ indexes a parameter. Unless stated otherwise we report $\mathrm{median}_p\,\mathcal{V}_p$. A barren plateau is the statement that $\mathcal V\in O(b^{-n})$ for some $b>1$, and its practical consequence follows from the shot cost of resolving such a gradient, which we derive in Section~IV-A.
+
+\subsection{Identity-block construction}
+Following \cite{grant}, the circuit consists of $M$ blocks of depth $2L$. Writing the first half of block $m$ as $W_m(p_1)=\prod_{l=L}^{1} V_l\, e^{-ip_{1,l}H_l/2}$, the second half is its mirror image, with the CZ chain applied first, then the rotations, and the layer order reversed. The second half carries its own parameters $p_2$, initialized at $p_2=-p_1$, so that $W_m^{\text{mirror}}(-p_1)W_m(p_1)=\mathbb{I}$ and hence $U(\theta_0)=\mathbb{I}$ exactly. Only the initialization ties the two halves together and they are free to diverge as training proceeds. Since an identity circuit cannot itself generate entanglement, the Heisenberg task places a fixed and never-trained entangling layer $B$ of $n$ random rotation-plus-CZ layers in front of the blocks, exactly as in \cite{grant}.
+
+\subsection{Tasks}
+Three tasks are used. \emph{Anchor A} measures the variance of $\partial_{\theta_{1,1,1}}C$ for a $ZZ$ observable at initialization, with input state $\sqrt{H}^{\otimes n}\lvert0\rangle$, 120 layers, and $n$ from two to twelve, reproducing Grant Fig.~1(a). The \emph{headline task} is a ground-state search for the periodic one-dimensional Heisenberg model $H=\sum_i (X_iX_{i+1}{+}Y_iY_{i+1}{+}Z_iZ_{i+1})+\sum_i Z_i$, whose $E_{\min}$ we obtain by dense diagonalization. We chose it for three reasons. Its ground state is entangled, so the fixed layer $B$ is needed and training is non-trivial. Its ground energy is exactly computable at every size we study, which makes the loss gap \gap{} a well-defined coordinate and is what the funnel analysis requires. And it is the setting of the published during-training claim we are testing. The \emph{locality task} maps $B\lvert0\rangle$ to $\lvert0\cdots0\rangle$ under two costs whose optima provably coincide, a global $C_G=1-\lvert\langle0\cdots0\rvert U(\theta)\lvert\psi_0\rangle\rvert^2$ and a local $C_L=1-\frac1n\sum_i\langle\lvert0\rangle\langle0\rvert_i\rangle$ \cite{cerezo}. That alignment is what makes the cross-measurement of Section~IV-G interpretable. Optimization uses Adam \cite{adam} at $\eta{=}10^{-3}$ by default, with vanilla gradient descent and two further rates serving as controls.
+
+\subsection{Measurement protocol}
+Three instruments separate the hypotheses behind RQ1, and Algorithm~\ref{alg:protocol} summarizes how they fit together. The first is the matched-norm null. At a checkpoint with displacement $r=\lVert\theta_t-\theta_0\rVert_2$ we evaluate the cost and the full gradient at $\theta_0+r\hat u$ for random unit vectors $\hat u$, which is the empirical counterpart of the uniformly sampled regions bounded in \cite{puig,mhiri}, matched per seed and per checkpoint. A trajectory sitting above the null indicates structure specific to the path, while equality indicates that geometry alone is responsible. The second instrument is cost conditioning, in which variance is recomputed over unconverged runs only, meaning those with $C>E_{\min}+\delta$. This separates both possibilities from simple convergence. The third is the change of coordinates itself, plotting variance against \gap{} rather than against step count, which tests whether variance carries any dynamics that achieved loss does not already explain. Alongside these we track a per-block scrambling probe $1-\lvert\mathrm{Tr}\,U_m\rvert/2^n$ to follow the growth of effective depth. It costs $O(4^n)$ and is disabled above ten qubits.
+
+\begin{figure}[t]
+\hrule\vspace{3pt}
+\footnotesize
+\textbf{Algorithm 1} Trajectory-vs-patch measurement (one trial)
+\vspace{2pt}\hrule\vspace{3pt}
+\footnotesize
+\textbf{Input:} seed $s$, size $n$, blocks $M$, depth $L$, steps $T$, null count $D$\\
+1: $(\text{axes},B,\theta_0)\leftarrow$ draw instance from stream $s_{\text{train}}$\\
+2: $\theta\leftarrow\theta_0$;\; init optimizer\\
+3: \textbf{for} $t=0$ \textbf{to} $T-1$ \textbf{do}\\
+4: \hspace{1em} $c_t\leftarrow C(\theta)$;\; $g\leftarrow\nabla C(\theta)$;\; $d_t\leftarrow\lVert\theta-\theta_0\rVert_2$\\
+5: \hspace{1em} \textbf{if} $t\in\mathcal{T}_{\text{ckpt}}$ \textbf{then}\\
+6: \hspace{2em} store $g$, block probes\\
+7: \hspace{2em} \textbf{for} $j=1$ \textbf{to} $D$ \textbf{do}\\
+8: \hspace{3em} $\hat u\sim\mathcal{U}(S^{P-1})$ from stream $s_{\text{null}}$\\
+9: \hspace{3em} $\theta^{\text{null}}\leftarrow\theta_0+d_t\,\hat u$\hfill\emph{(matched norm)}\\
+10: \hspace{3em} store $C(\theta^{\text{null}})$, $\nabla C(\theta^{\text{null}})$, probes\\
+11: \hspace{1em} $\theta\leftarrow\textsc{OptStep}(\theta,g)$\\
+12: \textbf{return} $\{c_t\},\{d_t\},$ gradients, nulls, probes
+\vspace{3pt}\hrule
+\caption{The null draws from an independent random stream, so trajectories are bit-identical regardless of $D$.}
+\label{alg:protocol}
+\end{figure}
+
+\subsection{Dataset generation and preparation}
+All simulations are analytic, meaning infinite-shot statevector evaluations, and they run in PennyLane \cite{pennylane}. Datasets are generated by automated pipelines and are reproducible from a single integer seed through a \texttt{SeedSequence} hierarchy, with one child per trial and a further split into training and null streams. Each trial record holds, for every step, the loss, the displacement, and a watch-set of gradient components sampled at block boundaries and block centres, following the positional structure reported in \cite{grant}. At roughly 25 log-spaced checkpoints it additionally holds the full gradient vector, the block probes and the null evaluations. At the headline configuration, with $K{=}100$ trials, $T{=}300$ steps and $P{=}1056$ parameters, a single dataset holds about $1.2\times10^7$ scalar gradient records. Preparation is deliberately minimal. Expectation values are analytic so no shot-noise filtering is applied, gradients are stored in float32, and variance estimation, conditioning and interpolation to reference gaps all happen downstream, which means the raw records are never transformed destructively. Long runs checkpoint after every trial and resume by skipping the ones already finished. Table~\ref{tab:configs} lists the configurations.
+
+\begin{table}[t]\centering\footnotesize
+\caption{Experimental configurations. $P$ is the parameter count, $K$ the ensemble size, $T$ the number of steps.}
+\label{tab:configs}
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+Exp. & Task & $n$ & $M{\times}L$ & $P$ & $K$ & $T$\\
+\midrule
+E0-A & init.\ variance & 2--12 & $1{\times}60$ & --- & 200 & --- \\
+E0-B & Heisenberg & 7 & $2{\times}33$ & 924 & 200 & 300\\
+E1 & Heisenberg & 6 & $2{\times}33$ & 792 & 50 & 300\\
+E1 & Heisenberg & 8 & $2{\times}33$ & 1056 & 100 & 300\\
+E1 & Heisenberg & 10 & $2{\times}33$ & 1320 & 50 & 300\\
+E1 & Heisenberg & 12 & $2{\times}33$ & 1584 & 50 & 600\\
+E1 & Heisenberg & 12 & $2{\times}50$ & 2400 & 30 & 600\\
+E2 & state prep. & 8 & $2{\times}33$ & 1056 & 100 & 300\\
+E3 & Heisenberg & 8 & $\{1,2,4\}{\times}15$ & 240--960 & 50 & 300\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Validation protocol}
+Every construction was validated before it was used in production. A pure-numpy twin simulator reruns the identical seeded ensembles, agreement to numerical precision is required, and that agreement was achieved to every printed digit at two, four, six and eight qubits. The parameter-shift rule was checked against central finite differences to around $10^{-11}$, identity-at-initialization is unit-tested to $10^{-16}$, and the block probe is verified to be zero at the start. Both published anchors were reproduced before any new measurement was attempted. The random half of Anchor A decays at $0.503$ per qubit against a predicted $2^{1-n}$ (Fig.~\ref{fig:anchor}), its identity half is flat at $0.02203$, and the Heisenberg anchor converges to the exactly diagonalized $E_{\min}=-12.4207$ with the published shape of variance decay. For the identity half we derive the flatness rather than merely observing it. At initialization every gate downstream of the watched parameter cancels against its own inverse, leaving
+\begin{equation}
+\partial_{\theta_{1,1,1}}C\big|_{\theta_0}=\tfrac{i}{2}\langle\psi\rvert[P_1,Z_0Z_1]\lvert\psi\rangle ,
+\label{eq:closedform}
+\end{equation}
+a three-point distribution over the axis draw $P_1\in\{X,Y,Z\}$ whose variance cannot depend on $n$ at all. It comes to $0.022025$ for the published input state.
+
+\begin{figure}[t]\centering
+\maybefig{grant_fig1a.png}{\columnwidth}
+\caption{Anchor A reproduced. Gradient variance against $n$ at initialization, with random init decaying at $0.503$ per qubit against a theoretical $0.5$, and identity-block init flat at the value derived in Eq.~\eqref{eq:closedform}.}
+\label{fig:anchor}
+\end{figure}
+
+\begin{figure}[t]\centering
+\maybefig{fig4b.png}{\columnwidth}
+\caption{Anchor B reproduced, on the seven-qubit Heisenberg VQE with $K{=}200$. Mean energy converges to the exactly diagonalized $E_{\min}=-12.4207$ on the left while gradient variance decays alongside it on the right. This figure reproduces the published during-training observation and also its ambiguity, since without a matched control it cannot separate convergence from loss of trainability. Supplying that control is the work of Section~IV.}
+\label{fig:anchorb}
+\end{figure}
+
+\section{Evaluation}
+\subsection{Evaluation methodology, measures, and sampling}
+The performance measure throughout is the across-trial gradient variance of Eq.~\eqref{eq:var}, always reported alongside the loss. That choice is forced by the domain rather than adopted by convention. Quantum expectation values are estimated from $S$ measurement samples with per-shot variance of order one, so the standard error on an estimated gradient component is $\Theta(1/\sqrt S)$ and resolving a component of magnitude $\sigma$ above the sampling floor requires
+\begin{equation}
+S=\Theta(1/\sigma^{2})
+\label{eq:shots}
+\end{equation}
+shots per component per step. Gradient variance is therefore not a proxy for trainability but its direct determinant, and it converts in the exponent into wall-clock cost on hardware. Accuracy-style measures have no meaning for these physical objectives, and the loss on its own cannot tell a converged run from a stalled one, which is the very confusion this study sets out to resolve.
+
+On sampling, trials are independent seeded instances and the ensemble sizes in Table~\ref{tab:configs} were chosen from the relative error of a variance estimator, $\sqrt{2/(K-1)}$, which gives about $10\%$ at $K{=}100$ and $20\%$ at $K{=}30$. All intervals reported are 16 to 84 percentile bootstrap ranges over trials, using 400 to 500 resamples. Checkpoints are log-spaced because the phenomena turn out to be power laws.
+
+On parametrization, the learning rate and the optimizer are nuisance parameters whose influence we measured rather than assumed. Four configurations, two optimizers at two rates each, are compared in Section~IV-D, and their disagreement is itself one of the findings. The conditioning threshold $\delta{=}1$ and the reference relative gap of $0.25\lvert E_{\min}\rvert$ were both varied as robustness checks in Section~IV-H, and fit windows are matched in relative gap across sizes for the same reason.
+
+\subsection{No plateau reemergence at $n=8$}
+Fig.~\ref{fig:e1} shows the headline experiment at $K{=}100$. The landscape at matched displacement stays fertile, with the null decaying only from $0.147$ to $0.084$ across the whole traveled range, while trajectory variance falls by a factor of about 480. The cost-conditioned curve lies exactly on the unconditioned one, so the decay is neither geometric in origin nor an artefact of averaging over runs that have already converged. Training also finishes having moved only about $0.077$ radians per parameter, which is about two and a half times the $\Theta(1/\sqrt m)$ patch scale of \cite{puig}. Optimization therefore completes inside the warm-start patch, and that is why no reemergence is observed rather than merely not detected. A second finding concerns the mechanism usually invoked for reemergence. Trajectories scramble their blocks about $1.6$ times faster than isotropic displacements of the same norm, with deviations of $0.52$ against $0.32$, and yet they pay no gradient penalty for it. Growth of effective depth and loss of trainability can come apart.
+
+\begin{figure*}[t]\centering
+\maybefig{e1_n8_M2_L33_adam_lr0.001_analysis.png}{0.92\textwidth}
+\caption{Headline experiment at $n{=}8$ with $K{=}100$. Panel (a) shows training, (b) variance against step, (c) the trajectory against the matched-norm null and against the cost-conditioned trajectory, and (d) block scrambling for trajectory and null.}
+\label{fig:e1}
+\end{figure*}
+
+\subsection{The patch shrinks with system size}\label{sec:patch}
+The matched-norm null is more than a control. It is a direct measurement of the object the warm-start theory bounds, namely the loss landscape at a given displacement from the initialization, and read across sizes it behaves just as \cite{mhiri} predict. At six qubits the null barely moves, fading by only about fifteen percent across the whole traveled range, so the patch is effectively unbounded at these displacements. Its decay then grows steadily with system size, by roughly a factor of $1.8$ at eight qubits, $2.8$ at ten and $8.7$ at twelve over comparable ranges. The fertile region around an identity-block initialization contracts as the system grows, which is the empirical counterpart of Proposition~1 of \cite{mhiri} and of the conclusion that warm starts must land ever closer to a basin as $n$ increases.
+
+Two things follow for how Section~IV-B should be read. The no-reemergence finding is not an artefact of small systems, because at every size we measured, including twelve qubits where the surrounding landscape has visibly begun to darken, the trajectory still sits below the null and the cost-conditioned curve still tracks the unconditioned one. Decay along the path remains convergence rather than plateau physics. The two measurements are also converging on each other. The fertile region shrinks with $n$ while the distance training must travel does not, so the regime this study observes, in which optimization completes inside the patch, is one the theory expects to end at sizes beyond classical simulation. Our data bound where that crossing has not yet happened, at twelve qubits and below, rather than where it eventually will.
+
+\subsection{The convergence funnel}\label{sec:funnel}
+Plotted against training step, four optimizer and rate configurations disagree by more than an order of magnitude. Plotted against displacement they nearly collapse, leaving a residual factor of about two between the two optimizer families. Plotted against the remaining loss gap they collapse completely, as Fig.~\ref{fig:funnel} shows, and across three decades they obey
+\begin{equation}
+\mathcal V \;\approx\; c(n)\,\big(\gap\big)^{\alpha(n)} .
+\label{eq:funnel}
+\end{equation}
+Gradient variance during identity-block training therefore has no independent dynamics at fixed size. It is slaved to the loss already achieved, and per-step decay rates are artefacts of the optimizer. Equation~\eqref{eq:funnel} promotes Grant's qualitative claim into a quantitative and optimizer-independent law. It also doubles as a plateau detector, since barren behaviour means small gradients at high cost, which would appear as points sagging below the law. No point sags, at any size we measured.
+
+\begin{figure}[t]\centering
+\maybefig{overlay_collapse.png}{\columnwidth}\\[2pt]
+\maybefig{funnel_collapse.png}{0.8\columnwidth}
+\caption{Above, variance against step fans out across four optimizer and rate configurations while variance against displacement nearly collapses. Below, the same runs plotted against \gap{} fall onto the single law of Eq.~\eqref{eq:funnel}.}
+\label{fig:funnel}
+\end{figure}
+
+\subsection{How steep is the funnel? A harmonic baseline}
+Equation~\eqref{eq:funnel} invites an obvious null model. Near a minimum $\theta^\star$ with Hessian $H$, a second-order expansion gives $\gap\approx\frac12\Delta^\top H\Delta$ and $\nabla C\approx H\Delta$ for $\Delta=\theta-\theta^\star$, and for an isotropic spectrum $H=\lambda\mathbb{I}$ these combine into $\lVert\nabla C\rVert^2=2\lambda(\gap)$, so that
+\begin{equation}
+\alpha_{\text{harmonic}}=1 .
+\label{eq:harmonic}
+\end{equation}
+A quadratic basin predicts variance linear in the loss gap. The exponents we measure, listed in Table~\ref{tab:fits}, are $1.29$, $1.95$, $2.80$ and $2.84$ at six, eight, ten and twelve qubits. They are steeper than harmonic everywhere, and they grow steeper as systems get larger. Two readings are available and we can partly separate them. If our fit windows lay strictly inside the harmonic region, an exponent above one would mean the basin really is flatter-bottomed than quadratic, which fits the narrow-gorge picture \cite{arrasmith} in which near-minimum regions are unusually flat except along a few directions. But our windows sit at moderate relative gap, between $0.12$ and $0.45$, and are plausibly outside the harmonic region, so part of the excess is likely pre-asymptotic. What neither caveat explains is the trend. The same window in matched relative units yields a steeper exponent at every step up in $n$, so the funnel departs further from harmonicity as systems grow. We offer this as an empirical regularity measured against a principled baseline rather than a derived law, and deriving $\alpha(n)$ analytically strikes us as the most obvious theoretical extension of this work.
+
+\subsection{Scaling with $n$: a pre-registered test and its miss}\label{sec:scaling}
+The funnel law holds at every size, but it is not universal across sizes. Measured at matched relative progress, with $\gap=0.25\lvert E_{\min}\rvert$ to correct for the extensive energy scale, the coefficient falls by $0.474$ and then $0.483$ per qubit as $n$ goes from six to eight to ten. Those figures are statistically indistinguishable from the barren-plateau factor of one half, and from the $0.503$ this study measured for the random-initialization plateau itself. Before running twelve qubits we pre-registered the extrapolation, predicting variance at the reference gap in the range $[3.5,5.5]\times10^{-4}$ and a matched-window exponent between $3.3$ and $4.6$. \textbf{The prediction failed.} We measured $\mathcal V=(7.21\pm0.29)\times10^{-4}$ at $K{=}50$, six standard deviations above the top of the predicted window, and $\alpha=2.84\pm0.06$, statistically flat against the $2.80\pm0.06$ found at ten qubits. The suppression softens to $0.615$ per qubit at the largest size, and this happens at the same point as the exponent saturates, as Fig.~\ref{fig:prefactor} and Table~\ref{tab:fits} show.
+
+\begin{table}[t]\centering\footnotesize
+\caption{Funnel fits. The exponent $\alpha$ is fitted over the matched relative-gap window from $0.12$ to $0.45$, and $\mathcal V^\star$ is the coefficient at relative gap $0.25$. Point estimates are taken over the full ensemble and uncertainties are bootstrap standard deviations over trials. The final row is the depth control.}
+\label{tab:fits}
+\begin{tabular}{@{}lrlll@{}}
+\toprule
+Config. & $K$ & $\alpha$ & $\mathcal V^\star$ & ratio/qubit\\
+\midrule
+$n{=}6$, $2{\times}33$ & 50 & $1.29\pm0.05$ & $(3.62\pm0.14){\times}10^{-2}$ & --- \\
+$n{=}8$, $2{\times}33$ & 100 & $1.95\pm0.03$ & $(8.15\pm0.25){\times}10^{-3}$ & 0.474\\
+$n{=}10$, $2{\times}33$ & 50 & $2.80\pm0.06$ & $(1.90\pm0.07){\times}10^{-3}$ & 0.483\\
+$n{=}12$, $2{\times}33$ & 50 & $2.84\pm0.06$ & $(7.21\pm0.29){\times}10^{-4}$ & 0.615\\
+\midrule
+$n{=}12$, $2{\times}50$ & 30 & $2.60\pm0.09$ & $(2.88\pm0.16){\times}10^{-4}$ & ---\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]\centering
+\maybefig{funnel_prefactor_rel.png}{\columnwidth}
+\caption{Funnels at four sizes with their per-size reference gaps on the left, and the coefficient at matched relative progress against $n$ on the right.}
+\label{fig:prefactor}
+\end{figure}
+
+The obvious confound is that circuit depth was held fixed while $n$ grew, which leaves larger systems relatively shallower. We tested this directly at two sizes and the two tests disagree, which turns out to be informative. At eight qubits a $4.4$-fold range of depth, from 30 to 132 layers in Fig.~\ref{fig:depth}, moves the coefficient by up to a factor of $1.8$ but with no monotone trend, against the roughly fiftyfold and strictly monotone effect of changing $n$ over the same study. Depth is irrelevant there. At twelve qubits, raising the depth from 132 to 200 layers lowers the coefficient from $(7.21\pm0.29)\times10^{-4}$ to $(2.88\pm0.16)\times10^{-4}$, a factor of $2.5$ and far outside either uncertainty, and it lands below the pre-registered window rather than above it. The natural reading unifies both results. What matters is depth relative to the depth at which a circuit of a given width scrambles fully. At eight qubits every configuration we tested is already saturated, so depth does nothing. At twelve qubits, depth 132 is not yet saturated, so a fixed-depth comparison under-suppresses. On that reading the apparent softening is an artefact of comparing circuits at fixed absolute depth across sizes, at matched saturation the suppression is at least as strong as $2^{-n}$, and the pre-registered miss is a failure of the fixed-depth extrapolation rather than of the exponential law itself. We report this as the most probable explanation rather than a demonstrated one. It rests on a single deeper configuration at one size with $K{=}30$, and the decisive control, which would hold saturation rather than depth fixed across $n$ by running depth 200 at eight qubits where we predict no change, is left to future work.
+
+\begin{figure}[t]\centering
+\maybefig{depth_dependence.png}{\columnwidth}
+\caption{Depth control at eight qubits. Funnels at depths from 30 to 132 on the left, and the coefficient at matched gap against depth on the right, varying by up to a factor of $1.8$ but without a monotone trend over a $4.4$-fold range.}
+\label{fig:depth}
+\end{figure}
+
+\subsection{Cost locality inverts the trajectory--landscape relationship}
+On the locality task, training the local cost reproduces the funnel phenomenology, with a fertile null and monotone trajectory decay, and it drives the global cost to zero for free, which validates the practical recipe implied by \cite{cerezo} at the ensemble level. Training the global cost inverts the picture, as Fig.~\ref{fig:e2} shows. The null sits pinned near $10^{-5}$ at every displacement, so the landscape is uniformly suppressed, and yet the trajectory climbs. Variance rises by two orders of magnitude to a peak about thirty-six times above the null near $r\approx0.9$, then collapses into convergence. This is the fertile valley of \cite{puig}, measured systematically at $K{=}100$ with bootstrap intervals rather than reported as an anecdote. The cross-measured gradients confirm the gorge-entry prediction \cite{cerezo,arrasmith}, since global-cost gradients begin suppressed, revive as fidelity grows, and then peak, and they peak higher under local training than under global training itself. The local cost is a better route into the global cost's gorge than the global cost is. Meanwhile the local cost's landscape level sits about twelve times above the global cost's at every displacement, which is the effective-frequency prediction of \cite{mhiri} in measured form.
+
+RQ1 therefore has a conditional answer that no earlier framing anticipated. Whether trajectories beat the patch average is set by cost locality. Fertile landscapes make trajectories the low-variance object, giving funnels, while barren landscapes make them the high-variance object, giving valleys. One caveat frames the practical reading. With analytic gradients the global cost trains successfully at eight qubits, and by Eq.~\eqref{eq:shots} its initial variance of $10^{-5}$ would cost around $10^{5}$ shots per component per step on hardware. The valley is real, but its floor is exponentially deep. This experiment ran at a single size, so the way valley depth varies with $n$ is unmeasured, and we flag that as the most significant limitation on the scope of the study.
+
+\begin{figure*}[t]\centering
+\maybefig{e2_trainglobal_n8_M2_L33_analysis.png}{0.92\textwidth}\\[2pt]
+\maybefig{e2_trainlocal_n8_M2_L33_analysis.png}{0.92\textwidth}
+\caption{Locality task at eight qubits with $K{=}100$. The top row trains under the global cost, showing costs in (a), global-cost gradients in (b) where the trajectory rises about thirty-six times above a flat and barren null, and cross-measured local gradients in (c). The bottom row trains under the local cost, showing funnel phenomenology in (b) and gorge entry in the cross-measured global gradients in (c).}
+\label{fig:e2}
+\end{figure*}
+
+\subsection{Error analysis}\label{sec:err}
+\textbf{Baselines.} Three baselines discipline the claims at different levels. The theoretical baseline is the random-initialization ensemble, which reproduces McClean's $2^{1-n}$ at $0.503$ per qubit and so bounds systematic error in the instrument itself, together with the identity-block ensemble, which reproduces the closed form of Eq.~\eqref{eq:closedform} to within the five percent sampling error of a three-point distribution at $K{=}200$. The per-measurement baseline is the matched-norm null, whose value at checkpoint zero has to coincide with the trajectory's by construction. We observe a ratio of $1.000$ in every run, which acts as an automatic self-test that would catch a seeding or indexing fault. The third baseline is the harmonic prediction of Eq.~\eqref{eq:harmonic}, against which every measured exponent is interpreted.
+
+\textbf{Statistical error.} Variance estimates carry relative error of about $\sqrt{2/(K-1)}$, and all headline comparisons use bootstrap intervals over trials. The decisive comparison at twelve qubits was run twice. At $K{=}30$ the pre-registered miss was marginal at roughly one standard error, so we extended the ensemble to $K{=}50$, which resumable seeding makes a strict superset rather than a fresh sample. That tightened the uncertainty to $\pm0.29\times10^{-4}$ and turned a suggestive miss into a definitive one.
+
+\textbf{Systematic error and robustness.} Six checks are worth recording. First, the choice of reference point matters. The per-qubit suppression factor moves from $0.352$ to $0.479$ when the reference gap changes from absolute, at a gap of three, to relative, at $0.25\lvert E_{\min}\rvert$. We report the relative version as the fair cross-size comparison, since the absolute version conflates funnel position with system size, and we note that this single choice is worth a factor of $1.4$ in the headline number. Second, fit windows matter. Exponents fitted over matched relative windows differ from naive whole-range fits by up to $0.15$, and more importantly $\alpha$ is sensitive to architecture at fixed $n$, ranging from $1.95$ to $2.78$ across the depth series. All cross-size claims therefore rest on the coefficient rather than the exponent, and the exponent trend is stated only at fixed architecture. Third, the depth-30 configuration stalls at a gap of $4.20$ because the ansatz is too shallow to reach the Heisenberg ground state, so its reference value is an edge estimate rather than an interpolation, and we keep the point with that caveat. This does surface a useful diagnostic taxonomy in funnel coordinates, since expressivity limits truncate a curve, plateau physics would sag it, and neither bends its slope. Fourth, consistent with \cite{grant}, watch-set components at block boundaries carry systematically larger variance than those at block centres at initialization. The watch set mixes both, so the reported medians are insensitive to this, but per-position funnels would be a straightforward extension that we did not pursue. Fifth, the twelve-qubit runs used 600 steps against 300 elsewhere, which is immaterial for reference-gap comparisons because the reference gap is crossed within the first 300 steps and trajectories are bit-identical prefixes under shared seeds. Sixth, the seven-qubit anchor has a degenerate ground space, but conditioning thresholds are defined on energy rather than state overlap and so are insensitive to it.
+
+\textbf{Failure analysis.} One outright failure occurred and we report it as such. The pre-registered exponential extrapolation to twelve qubits missed. Dissecting it localizes the failure to the assumption of a constant per-qubit factor, since the pairwise factors are $0.474$, $0.483$ and then $0.615$, rather than to statistics, because the $K{=}50$ intervals exclude the window, or to fit windows, because matched-window refits preserve both the trend and its saturation, or to the instrument, since the anchors are unchanged. The depth controls then identify the most probable cause. Reproduction-level failures were caught by the validation protocol before they could contaminate anything, and the consequential example is the input state. The published construction uses $\sqrt{H}^{\otimes n}\lvert0\rangle$, and the natural misreading, a plain Hadamard layer, sets $\langle Z\rangle$ and $\langle Y\rangle$ to zero on every qubit. By Eq.~\eqref{eq:closedform} that would collapse the identity-block anchor to exactly zero variance, a silent and total failure had the closed form not been derived and unit-tested. We regard this as the strongest argument for the twin-simulator protocol, because the error would never have announced itself in any downstream plot.
+
+\subsection{Reproducibility and compute}
+Every number in this report comes from a single integer seed per experiment, expanded through a \texttt{SeedSequence} hierarchy, with training and null-evaluation streams split so that trajectories stay bit-identical no matter how many null directions are drawn. Re-running any command reproduces its dataset exactly, and long runs resume from per-trial checkpoints. The artefact contains the experiment drivers, the analysis scripts that generate every figure in this paper, four independent pure-numpy twin simulators used for validation, the datasets themselves, and the pre-registered predictions as they were recorded before the twelve-qubit run. Total compute is modest by design, amounting to a few core-days on a six-core laptop, of which the largest single ensemble accounts for roughly one. That is deliberate, since the scientific content lies in the controls rather than in scale, and every configuration studied here is classically simulable by construction.
+
+\section{Conclusions and Future Work}
+We set out to test whether identity-block initialization's protection against the QNN vanishing-gradient problem survives training. At twelve qubits and below the controlled answer is that nothing reemerges along the path. The landscape around trained trajectories stays fertile, every ensemble descends, and gradient variance turns out to be a function of the remaining loss gap alone, as in Eq.~\eqref{eq:funnel}, independent of the optimizer, with convergence completing inside the warm-start patch that theory guarantees. The funnel is steeper than the harmonic baseline of Eq.~\eqref{eq:harmonic} and grows steeper with size. But the funnel through which training descends narrows exponentially, and its coefficient at matched relative progress carries the barren-plateau factor of roughly $0.48$ per qubit up to ten qubits. Our pre-registered test at twelve qubits missed, and we trace that miss to a finite-depth confound rather than to any breakdown of the exponential law. Cost locality then determines the sign of the comparison between trajectory and landscape, with local costs giving funnels through fertile terrain and global costs giving fertile valleys carved across barren terrain, accompanied by gorge-entry revival of global gradients under local training.
+
+The implication we consider most important is a reconciliation. Grant's convergence reading, McClean's exponential scaling, Cerezo's locality dichotomy and the patch guarantees of Puig and Mhiri are all correct descriptions of one object seen in different coordinates. By Eq.~\eqref{eq:shots} the funnel coefficient converts directly into exponentially growing measurement cost at matched progress, whether or not a plateau is present. The practical corollary is deflationary and worth stating plainly. An initialization strategy can remove the plateau from the optimizer's path without removing the exponential cost of following that path. As \cite{mhiri} point out, regions close to the identity tend to be low in entanglement or magic and are therefore classically simulable, so a warm start that never leaves the patch, which ours does not, may be purchasing trainability at the price of quantum advantage. Establishing whether the funnel can be traversed while leaving the classically simulable region behind is, in our view, the central open question this work exposes.
+
+Several limitations bound what we can claim. Everything was measured at twelve qubits or fewer, on one task family, and the scaling in $n$ was measured at a single architecture. The locality experiment ran at one size, so valley depth against $n$ is unmeasured. Gradients are analytic throughout, so the interaction between shot noise and the funnel is modelled through Eq.~\eqref{eq:shots} rather than simulated. The depth interpretation of the twelve-qubit result rests on one deeper configuration. And the absence of a plateau does not imply benign optimization, since poor minima and hardness results \cite{anschuetz,bittel} remain in force. Given more time we would hold circuit saturation rather than absolute depth fixed across sizes, which our two depth controls suggest is the right comparison, extend the fertile-valley measurement across $n$ to quantify how quickly valleys deepen, simulate finite-shot training to test Eq.~\eqref{eq:shots} directly, measure entanglement and magic along trajectories to address the simulability question above, and port the whole measurement design, meaning trajectory against matched-norm null in funnel coordinates, to classical identity-initialized residual networks, where as far as we know the same controlled comparison has never been made.
+
+\begin{thebibliography}{22}
+\bibitem{glorot} X.~Glorot and Y.~Bengio, ``Understanding the difficulty of training deep feedforward neural networks,'' in \emph{Proc. AISTATS}, 2010, pp.~249--256.
+\bibitem{saxe} A.~M. Saxe, J.~L. McClelland, and S.~Ganguli, ``Exact solutions to the nonlinear dynamics of learning in deep linear neural networks,'' in \emph{Proc. ICLR}, 2014.
+\bibitem{resnet} K.~He, X.~Zhang, S.~Ren, and J.~Sun, ``Deep residual learning for image recognition,'' in \emph{Proc. IEEE CVPR}, 2016, pp.~770--778.
+\bibitem{hardtma} M.~Hardt and T.~Ma, ``Identity matters in deep learning,'' in \emph{Proc. ICLR}, 2017.
+\bibitem{mcclean} J.~R. McClean, S.~Boixo, V.~N. Smelyanskiy, R.~Babbush, and H.~Neven, ``Barren plateaus in quantum neural network training landscapes,'' \emph{Nature Communications}, vol.~9, art.~4812, 2018.
+\bibitem{larocca} M.~Larocca, S.~Thanasilp, S.~Wang, K.~Sharma, J.~Biamonte, P.~J. Coles, L.~Cincio, J.~R. McClean, Z.~Holmes, and M.~Cerezo, ``Barren plateaus in variational quantum computing,'' \emph{Nature Reviews Physics}, 2025.
+\bibitem{grant} E.~Grant, L.~Wossnig, M.~Ostaszewski, and M.~Benedetti, ``An initialization strategy for addressing barren plateaus in parametrized quantum circuits,'' \emph{Quantum}, vol.~3, p.~214, 2019.
+\bibitem{puig} R.~Puig, M.~Drudis, S.~Thanasilp, and Z.~Holmes, ``Variational quantum simulation: a case study for understanding warm starts,'' \emph{PRX Quantum}, vol.~6, art.~010317, 2025.
+\bibitem{mhiri} H.~Mhiri, R.~Puig, S.~Lerch, M.~S. Rudolph, T.~Chotibut, S.~Thanasilp, and Z.~Holmes, ``A unifying account of warm start guarantees for patches of quantum landscapes,'' arXiv:2502.07889, 2025.
+\bibitem{cerezo} M.~Cerezo, A.~Sone, T.~Volkoff, L.~Cincio, and P.~J. Coles, ``Cost function dependent barren plateaus in shallow parametrized quantum circuits,'' \emph{Nature Communications}, vol.~12, art.~1791, 2021.
+\bibitem{wang} S.~Wang, E.~Fontana, M.~Cerezo, K.~Sharma, A.~Sone, L.~Cincio, and P.~J. Coles, ``Noise-induced barren plateaus in variational quantum algorithms,'' \emph{Nature Communications}, vol.~12, art.~6961, 2021.
+\bibitem{holmes} Z.~Holmes, K.~Sharma, M.~Cerezo, and P.~J. Coles, ``Connecting ansatz expressibility to gradient magnitudes and barren plateaus,'' \emph{PRX Quantum}, vol.~3, art.~010313, 2022.
+\bibitem{skolik} A.~Skolik, J.~R. McClean, M.~Mohseni, P.~van~der Smagt, and M.~Leib, ``Layerwise learning for quantum neural networks,'' \emph{Quantum Machine Intelligence}, vol.~3, art.~5, 2021.
+\bibitem{zhang} K.~Zhang, L.~Liu, M.-H. Hsieh, and D.~Tao, ``Escaping from the barren plateau via Gaussian initializations in deep variational quantum circuits,'' in \emph{Adv. Neural Inf. Process. Syst.}, vol.~35, 2022.
+\bibitem{anschuetz} E.~R. Anschuetz and B.~T. Kiani, ``Quantum variational algorithms are swamped with traps,'' \emph{Nature Communications}, vol.~13, art.~7760, 2022.
+\bibitem{bittel} L.~Bittel and M.~Kliesch, ``Training variational quantum algorithms is NP-hard,'' \emph{Physical Review Letters}, vol.~127, art.~120502, 2021.
+\bibitem{mitarai} K.~Mitarai, M.~Negoro, M.~Kitagawa, and K.~Fujii, ``Quantum circuit learning,'' \emph{Physical Review A}, vol.~98, art.~032309, 2018.
+\bibitem{schuld} M.~Schuld, V.~Bergholm, C.~Gogolin, J.~Izaac, and N.~Killoran, ``Evaluating analytic gradients on quantum hardware,'' \emph{Physical Review A}, vol.~99, art.~032331, 2019.
+\bibitem{adam} D.~P. Kingma and J.~Ba, ``Adam: A method for stochastic optimization,'' in \emph{Proc. ICLR}, 2015.
+\bibitem{pennylane} V.~Bergholm \emph{et al.}, ``PennyLane: automatic differentiation of hybrid quantum-classical computations,'' arXiv:1811.04968, 2018.
+\bibitem{arrasmith} A.~Arrasmith, Z.~Holmes, M.~Cerezo, and P.~J. Coles, ``Equivalence of quantum barren plateaus to cost concentration and narrow gorges,'' \emph{Quantum Science and Technology}, vol.~7, art.~045015, 2022.
+\end{thebibliography}
+
+\end{document}

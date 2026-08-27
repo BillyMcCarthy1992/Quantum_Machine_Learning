@@ -1,0 +1,63 @@
+RESULTS SUMMARY
+Recomputed from the datasets. Cross-check against the report.
+========================================================================
+
+ANCHORS  (report Sec. III-F, Figs. 1 and 2)
+  random init decay per qubit : 0.5032   (theory 2^-1 = 0.5)
+  identity-block variance     : 0.02177 mean over n, range 0.02023-0.02384
+  closed-form prediction      : 0.022025  (Eq. 3)
+  Heisenberg n=7 E_min        : -12.4207   final mean energy -12.3866
+
+FUNNEL FITS  (report Table II, Sec. IV-D and IV-F)
+  exponent fitted over relative gap 0.12-0.45; coefficient at relative gap 0.25
+  point estimates over the full ensemble, +- bootstrap standard deviation
+  config                    K          alpha          coefficient
+  n=6, 2x33                50   1.29 +- 0.05   3.624e-02 +- 1.5e-03
+  n=8, 2x33               100   1.95 +- 0.04   8.150e-03 +- 2.6e-04
+  n=10, 2x33               50   2.80 +- 0.06   1.903e-03 +- 7.0e-05
+  n=12, 2x33               50   2.84 +- 0.06   7.208e-04 +- 3.0e-05
+  n=12, 2x50               30   2.60 +- 0.09   2.878e-04 +- 1.6e-05
+
+  suppression per qubit at matched relative progress (Sec. IV-F):
+    n=6 -> n=8: 0.474 per qubit
+    n=8 -> n=10: 0.483 per qubit
+    n=10 -> n=12: 0.615 per qubit
+    depth control at n=12: 132-layer 7.208e-04 vs 200-layer 2.878e-04, factor 2.50
+
+PATCH DECAY  (report Sec. IV-C)
+    n   r_max  null start    null end   decay  traj/null
+    6    1.63   2.370e-01   2.074e-01    1.14     0.0002
+    8    2.49   1.465e-01   8.364e-02    1.75     0.0037
+   10    3.00   1.055e-01   3.830e-02    2.75     0.0084
+   12    5.29   7.349e-02   8.478e-03    8.67     0.0091
+  decay = null variance at first checkpoint / at last
+  traj/null well below 1 at every size: the path stays under the landscape
+
+DEPTH SERIES AT n=8  (report Sec. IV-F, Fig. 6)
+   depth    M x L   alpha   coefficient  final gap
+      30     1x15     nan     1.008e-02       4.20
+      60     2x15    2.76     1.047e-02       1.86
+     120     4x15    2.33     1.541e-02       0.76
+     132     2x33    1.95     8.150e-03       0.55
+  spread across depth: factor 1.89, non-monotone
+
+COST LOCALITY  (report Sec. IV-G)
+  train=global K=100: null level 1.03e-05, peak traj/null 36.1x at checkpoint 11, final cost 0.0139
+  train=local  K=100: null level 1.26e-04, peak traj/null 1.0x at checkpoint 0, final cost 0.0081
+
+DATASET SIZES  (report Table I)
+  file                                         n     MxL      P    K
+  e1_n10_M2_L33_adam_lr0.001.npz              10    2x33   1320   50
+  e1_n12_M2_L33_adam_lr0.001.npz              12    2x33   1584   50
+  e1_n12_M2_L50_adam_lr0.001.npz              12    2x50   2400   30
+  e1_n6_M2_L33_adam_lr0.001.npz                6    2x33    792   50
+  e1_n8_M2_L33_adam_lr0.0003.npz               8    2x33   1056   50
+  e1_n8_M2_L33_adam_lr0.001.npz                8    2x33   1056  100
+  e1_n8_M2_L33_gd_lr0.003.npz                  8    2x33   1056   50
+  e1_n8_M2_L33_gd_lr0.01.npz                   8    2x33   1056   50
+  e2_trainglobal_n8_M2_L33.npz                 8    2x33   1056  100
+  e2_trainlocal_n8_M2_L33.npz                  8    2x33   1056  100
+  e3_n8_M1_L15.npz                             8    1x15    240   50
+  e3_n8_M2_L15.npz                             8    2x15    480   50
+  e3_n8_M4_L15.npz                             8    4x15    960   50
+  fig4b.npz                                    7    2x33    924  200
